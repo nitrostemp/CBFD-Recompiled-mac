@@ -11,9 +11,11 @@
 #      ROM_REPO (owner/name of the private repository) and ROM_REPO_TOKEN (the token).
 #
 # A pushed tag like v0.2.0 builds the packages into a draft release, which is published
-# once all of them have built. Run by hand from the Actions tab, it makes a draft "Test build"
-# release instead (drafts are only visible to the repository's collaborators). It has no
-# pull request trigger, so the ROM token is never exposed to code from forks.
+# once all of them have built. Each push to master (other than one changing only .md
+# files) builds them into a draft "Latest build" release, replaced by the next push's. Run
+# by hand from the Actions tab, it makes a draft "Test build" release. Drafts are only
+# visible to the repository's collaborators. It has no pull request trigger, so the ROM
+# token is never exposed to code from forks.
 #
 # It uses no third-party actions (the repository only allows its owner's): git and the
 # GitHub CLI, both installed on GitHub's runners.
@@ -22,6 +24,9 @@ name: release
 on:
   push:
     tags: ['v*']
+    branches: [master]
+    # Path filters only apply to branch pushes: a tag always builds.
+    paths-ignore: ['**.md']
   workflow_dispatch:
 
 permissions:
@@ -48,6 +53,13 @@ jobs:
             tag=$GITHUB_REF_NAME
             title="Conker's Bad Fur Day: Recompiled $tag"
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$title" --notes "Building..."
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
+            # One draft for the branch's newest build: the previous push's is replaced.
+            tag=latest-build
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+              --title "Latest build ($GITHUB_REF_NAME, ${GITHUB_SHA:0:7})" \
+              --notes "Build of $GITHUB_REF_NAME at $GITHUB_SHA (not published). Replaced by the next push's."
           else
             tag=test-build-$GITHUB_RUN_NUMBER
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
